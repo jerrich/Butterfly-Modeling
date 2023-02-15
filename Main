@@ -1,0 +1,198 @@
+import pandas as pd
+from pyproj import Geod
+import datetime
+import numpy as np
+import seaborn as sns
+
+sns.set()
+
+pd.set_option("display.max_columns", 20)
+
+g = Geod(ellps="WGS84")
+
+read_path = "C:/Users/jerem/PycharmProjects/ButterflyModel/Data/"  # location to find data on my computer
+full_df = pd.read_excel(read_path + "Tagged Data Full.xlsx")  # date, time, and location data for each butterfly
+# station data for each butterfly
+m0_df = pd.read_excel(read_path + "Monarch_1HourlyPrunedMetData.xlsx")
+m1_df = pd.read_excel(read_path + "Monarch_2HourlyPrunedMetData.xlsx")
+m2_df = pd.read_excel(read_path + "Monarch_3HourlyPrunedMetData.xlsx")
+m3_df = pd.read_excel(read_path + "Monarch_4HourlyPrunedMetData.xlsx")
+m4_df = pd.read_excel(read_path + "Monarch_6HourlyPrunedMetData.xlsx")
+m5_df = pd.read_excel(read_path + "Monarch_7HourlyPrunedMetData.xlsx")
+m6_df = pd.read_excel(read_path + "Monarch_8HourlyPrunedMetData.xlsx")
+m7_df = pd.read_excel(read_path + "Monarch_9HourlyPrunedMetData.xlsx")
+m8_df = pd.read_excel(read_path + "Monarch_10HourlyPrunedMetData.xlsx")
+m9_df = pd.read_excel(read_path + "Monarch_11HourlyPrunedMetData.xlsx")
+m10_df = pd.read_excel(read_path + "Monarch_12HourlyPrunedMetData.xlsx")
+m11_df = pd.read_excel(read_path + "Monarch_13HourlyPrunedMetData.xlsx")
+m12_df = pd.read_excel(read_path + "Monarch_14HourlyPrunedMetData.xlsx")
+m13_df = pd.read_excel(read_path + "Monarch_15HourlyPrunedMetData.xlsx")
+m14_df = pd.read_excel(read_path + "Monarch_16HourlyPrunedMetData.xlsx")
+m15_df = pd.read_excel(read_path + "Monarch_17HourlyPrunedMetData.xlsx")
+m16_df = pd.read_excel(read_path + "Monarch_18HourlyPrunedMetData.xlsx")
+m17_df = pd.read_excel(read_path + "Monarch_19HourlyPrunedMetData.xlsx")
+m18_df = pd.read_excel(read_path + "Monarch_20HourlyPrunedMetData.xlsx")
+m19_df = pd.read_excel(read_path + "Monarch_21HourlyPrunedMetData.xlsx")
+m20_df = pd.read_excel(read_path + "Monarch_22HourlyPrunedMetData.xlsx")
+m21_df = pd.read_excel(read_path + "Monarch_23HourlyPrunedMetData.xlsx")
+m22_df = pd.read_excel(read_path + "Monarch_24HourlyPrunedMetData.xlsx")
+m23_df = pd.read_excel(read_path + "Monarch_25HourlyPrunedMetData.xlsx")
+
+full_df = full_df.drop([4])  # delete extra row
+full_df = full_df.reset_index(drop=True)
+
+butterfly_stations = []  # list of station data
+butterfly_stations.append(m0_df)
+butterfly_stations.append(m1_df)
+butterfly_stations.append(m2_df)
+butterfly_stations.append(m3_df)
+butterfly_stations.append(m4_df)
+butterfly_stations.append(m5_df)
+butterfly_stations.append(m6_df)
+butterfly_stations.append(m7_df)
+butterfly_stations.append(m8_df)
+butterfly_stations.append(m9_df)
+butterfly_stations.append(m10_df)
+butterfly_stations.append(m11_df)
+butterfly_stations.append(m12_df)
+butterfly_stations.append(m13_df)
+butterfly_stations.append(m14_df)
+butterfly_stations.append(m15_df)
+butterfly_stations.append(m16_df)
+butterfly_stations.append(m17_df)
+butterfly_stations.append(m18_df)
+butterfly_stations.append(m19_df)
+butterfly_stations.append(m20_df)
+butterfly_stations.append(m21_df)
+butterfly_stations.append(m22_df)
+butterfly_stations.append(m23_df)
+
+# migration parameters to test
+speed_options = {2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5, 20.0}
+min_temp_options = {40, 45, 50, 55, 60, 65}
+max_temp_options = {70, 75, 80, 85, 90}
+
+# (24 hour clock) times the butterflies start and stop flying
+start_time = 7
+stop_time = 20
+
+
+def main():
+    overall_results_df = pd.DataFrame(columns=["butterfly", "best distance", "best speed", "best min temp", "best max temp"])
+
+    # loop through each butterfly
+    for butterfly in range(len(butterfly_stations)):
+        print(f"computing butterfly {butterfly}")
+        stations_dict = {}  # reorganized dictionary of stations for each butterfly: {station: [latitude, longitude, {date: {time: [temp, precipitation]}}]}
+        # construct stations_dict
+        for i in range(len(butterfly_stations[butterfly])):
+            date_and_time = butterfly_stations[butterfly].loc[i, "StationDate"].to_pydatetime()
+            if not datetime.time(start_time - 2, 0, 0) < date_and_time.time() < datetime.time(stop_time + 1, 0, 0):  # prune out night times
+                continue
+            station_id = butterfly_stations[butterfly].loc[i, "STATION"]
+            latitude = butterfly_stations[butterfly].loc[i, "SLatitude"]
+            longitude = butterfly_stations[butterfly].loc[i, "SLongitude"]
+            temperature = butterfly_stations[butterfly].loc[i, "Temp"]
+            precipitation = butterfly_stations[butterfly].loc[i, "Precipitation"]
+
+            if station_id not in stations_dict:
+                stations_dict[station_id] = [latitude, longitude, {}]
+            if date_and_time.date() not in stations_dict[station_id][2]:
+                stations_dict[station_id][2][date_and_time.date()] = {}
+            stations_dict[station_id][2][date_and_time.date()][date_and_time.time()] = [temperature, precipitation]
+
+        # declare the ending date_and_time and location for this butterfly, which do not change with different migration parameters
+        end_date_and_time = full_df.loc[butterfly, "EndDate"].to_pydatetime()
+        end_latitude = full_df.loc[butterfly, "EndLat"]
+        end_longitude = full_df.loc[butterfly, "EndLon"]
+
+        individual_results = []  # keep track of results
+
+        # loop through each combination of migration parameters
+        for min_temp in min_temp_options:
+            # print(f"computing min_temp {min_temp}")
+            for max_temp in max_temp_options:
+                if min_temp > max_temp:  # the butterfly will not fly at all here, so skip it
+                    continue
+                for speed in speed_options:
+                    # initialize the date_and_time, latitude, longitude, and bearing, which then change at each step
+                    date_and_time = full_df.loc[butterfly, "StartDate"].to_pydatetime()
+                    latitude = full_df.loc[butterfly, "StartLat"]
+                    longitude = full_df.loc[butterfly, "StartLon"]
+                    bearing = g.inv(longitude, latitude, end_longitude, end_latitude)[0]
+
+                    # step the butterfly
+                    while date_and_time < end_date_and_time:  # run for the length of flying
+                        # assume butterfly will only fly between start_time and stop_time
+                        if not datetime.time(start_time - 1, 0, 0) < date_and_time.time() < datetime.time(stop_time, 0, 0):
+                            date_and_time += datetime.timedelta(hours=1)  # time step
+                            continue
+
+                        # find the temperature and precipitation from the closest station at the current date and time
+                        # loop through stations as some data may be missing from some stations
+                        stations_missing_data = set()  # track stations with missing data so as not to repeat searching
+                        while True:
+                            # find the closest weather station
+                            closest_station = None
+                            for station in stations_dict:
+                                if station not in stations_missing_data:
+                                    dist = g.inv(longitude, latitude, stations_dict[station][1], stations_dict[station][0])[2]
+                                    if (not closest_station) or dist < closest_station[1]:
+                                        closest_station = (station, dist)
+
+                            station_data = stations_dict[closest_station[0]][2]  # data for given station
+
+                            # if the current date is missing from this station, try other stations
+                            if date_and_time.date() not in station_data:
+                                stations_missing_data.add(closest_station[0])
+                                continue
+
+                            station_date_data = station_data[date_and_time.date()]  # data for given station on given date
+
+                            # find the closest time
+                            closest_time = None
+                            for time_point in station_date_data:
+                                dist = abs(datetime.datetime.combine(date_and_time.date(), time_point) - date_and_time)
+                                if (not closest_time) or dist < closest_time[1]:
+                                    closest_time = (time_point, dist)
+
+                            # if this station has no times sufficiently close to the current time, try other stations
+                            if closest_time[1] >= datetime.timedelta(hours=2):
+                                stations_missing_data.add(closest_station[0])
+                                continue
+
+                            temperature = station_date_data[closest_time[0]][0]
+                            precipitation = station_date_data[closest_time[0]][1]
+                            break
+
+                        # move the butterfly iff the conditions are right
+                        if min_temp <= temperature <= max_temp and precipitation == 0:
+                            new_bearing = g.inv(longitude, latitude, end_longitude, end_latitude)[0]
+                            if abs(bearing - new_bearing) < 1:  # the butterfly has not passed its final location
+                                bearing = new_bearing
+                            new_coordinates = g.fwd(longitude, latitude, bearing, 1000 * speed)
+                            longitude = new_coordinates[0]
+                            latitude = new_coordinates[1]
+
+                        date_and_time += datetime.timedelta(hours=1)  # time step
+
+                    # track results
+                    dist = g.inv(longitude, latitude, end_longitude, end_latitude)[2]  # distance between end capture location and simulated end location
+                    individual_results.append((dist, speed, min_temp, max_temp))
+
+        individual_distances, individual_speeds, individual_min_temps, individual_max_temps = zip(*individual_results)
+        individual_best_distance = min(individual_distances)
+        # individual_best_distance = min(map(lambda i: i[0], individual_results))
+
+        individual_best_results = []
+        for result in individual_results:
+            if result[0] == individual_best_distance:
+                individual_best_results.append(result)
+
+        print("butterfly: ")
+        print(butterfly)
+        print("individual_best_results: ")
+        print(individual_best_results)
+
+
+main()
